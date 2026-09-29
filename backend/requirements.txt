@@ -1,0 +1,30 @@
+# VPP 3D Simulation Backend Requirements
+
+# Core OpenEnv and VPP dependencies (inherit from main project)
+fastapi>=0.115.0
+uvicorn>=0.24.0
+pydantic>=2.0.0
+openenv-core[core]>=0.2.2
+numpy>=1.24.0
+
+# WebSocket support
+python-socketio>=5.11.0
+websockets>=12.0
+
+# HTTP client
+requests>=2.31.0
+
+# Environment variables
+python-dotenv>=1.0.0
+
+# LLM client (for RL agent fallback)
+openai>=1.0.0
+
+# RL Frameworks (for loading trained models)
+stable-baselines3>=2.0.0        # PPO, SAC, DQN, A2C, TD3
+torch>=2.0.0                    # PyTorch backend
+gymnasium>=0.29.0               # Gym environments
+
+# Optional: Advanced RL frameworks (uncomment if needed)
+# ray[rllib]>=2.0.0             # Ray RLlib
+# tensorflow>=2.13.0            # TensorFlow-based models

@@ -1,0 +1,74 @@
+# Dependencies
+node_modules/
+**/node_modules/
+.pnpm-store/
+
+# Virtual Environments & Python Caches
+venv/
+.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+__pycache__/
+/**/__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Next.js & Frontend Build Outputs
+.next/
+/**/.next/
+out/
+/**/out/
+build/
+/**/build/
+dist/
+/**/dist/
+
+# Logs & Diagnostics
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+logs/
+/**/logs/
+
+# Reinforcement Learning & Model Checkpoints / Weights (Except intentional initial weights if tracking)
+models/checkpoints/
+training/checkpoints/
+training/models/
+training/logs/
+*.zip
+*.pkl
+*.pt
+*.pth
+*.onnx
+*.h5
+tensorboard/
+runs/
+wandb/
+
+# Environment Variables & Secrets
+.env
+.env*.local
+!.env.example
+
+# IDEs & OS Files
+.vscode/
+.idea/
+.vs/
+.gemini/
+.claude/
+.antigravity/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Testing & Coverage
+.coverage
+.pytest_cache/
+htmlcov/
+.coverage.*

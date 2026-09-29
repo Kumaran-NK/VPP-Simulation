@@ -1,0 +1,86 @@
+name: vpp
+display_name: Virtual Power Plant Orchestrator
+description: >
+  Manage 100 home batteries in a simulated neighbourhood to maximize a
+  multi-objective Pareto aggregate (profit, safety, carbon, degradation, DR).
+  One step = 15 minutes. 48 steps = 12-hour episode. Two home zones
+  (Zone A standard, Zone B with EVs).
+spec_version: "1.0"
+version: "1.0.0"
+author: "VPP Team"
+
+observation_space:
+  type: structured
+  description: >
+    JSON observation with telemetry, market price, grid status, forecasts,
+    demand-response bids, and P2P availability across two zones.
+
+action_space:
+  type: continuous
+  description: >
+    Five-field continuous action controlling charge/discharge, safety reserve,
+    EV deferral, DR bid acceptance, and P2P export rate.
+  fields:
+    global_charge_rate:
+      range: [-1.0, 1.0]
+    min_reserve_pct:
+      range: [0.0, 1.0]
+    defer_ev_charging:
+      range: [0.0, 1.0]
+    accept_dr_bid:
+      type: boolean
+    p2p_export_rate:
+      range: [0.0, 1.0]
+
+endpoints:
+  health: /health
+  reset: /reset
+  step: /step
+  state: /state
+
+tasks:
+  - id: easy-arbitrage
+    description: >
+      High solar, low demand, and simple TOU pricing (cheap daytime, expensive evening).
+      Charge by day and discharge into evening peak. Profit target $500.
+    steps: 48
+    difficulty: easy
+
+  - id: medium-forecast-error
+    description: >
+      Heatwave: 4x AC demand spike 10:00–14:00, with midday real-solar suppression while
+      forecasts remain optimistic. Sinusoidal pricing. Profit target $200.
+    steps: 48
+    difficulty: medium
+
+  - id: hard-frequency-response
+    description: >
+      Grid stress: 10x price spike + frequency emergency at step 26 (12:30). Profit target $1000.
+    steps: 48
+    difficulty: hard
+
+  - id: expert-demand-response
+    description: >
+      DR auctions every 6 steps with 1.5-3.0x premium multipliers. Accepted windows are
+      graded by delivered-vs-committed energy and consecutive failed windows escalate
+      penalties (2x, 3x, then 4x). Includes adversarial cloud disruption. Profit target $800.
+    steps: 48
+    difficulty: expert
+
+  - id: islanding-emergency
+    description: >
+      Grid disconnect between steps 20–29. Prioritize critical household load and shed flexible
+      load first if needed. Reconnect at step 30 with a one-step soft-sync discharge cap before
+      the reconnection spike opportunity. Profit target $400.
+    steps: 48
+    difficulty: hard
+
+scoring:
+  reward_range: [-1000.0, 1000.0]
+  success_threshold: 0.5
+  score_formula: pareto_aggregate
+
+constraints:
+  max_runtime_seconds: 1200
+  max_memory_gb: 8
+  max_vcpu: 2

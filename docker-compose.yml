@@ -1,0 +1,57 @@
+version: '3.8'
+
+services:
+  # VPP Environment Server (from the documents you shared)
+  vpp-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "7860:7860"
+    environment:
+      - HOST=0.0.0.0
+      - PORT=7860
+      - HF_TOKEN=${HF_TOKEN:-}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7860/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - vpp-network
+
+  # 3D Simulation Server (RL-integrated WebSocket server)
+  simulation-server:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    ports:
+      - "8001:8001"
+    environment:
+      - VPP_SERVER_URL=http://vpp-server:7860
+      - SIMULATION_PORT=8001
+      - HF_TOKEN=${HF_TOKEN:-}
+    depends_on:
+      vpp-server:
+        condition: service_healthy
+    networks:
+      - vpp-network
+
+  # Frontend (Next.js + React + Three.js)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_SIMULATION_WS_URL=ws://localhost:8001/ws
+    depends_on:
+      - simulation-server
+    networks:
+      - vpp-network
+
+networks:
+  vpp-network:
+    driver: bridge

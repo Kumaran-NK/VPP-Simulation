@@ -18,6 +18,13 @@ import sys
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Set, Any
 
+# Load .env before anything else
+try:
+    from dotenv import load_dotenv
+    load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
+except ImportError:
+    pass
+
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
@@ -43,14 +50,15 @@ except ImportError:
     RL_AGENT_AVAILABLE = False
     scan_available_models = None
 
-# LLM client (fallback)
+# Groq AI agent
 try:
-    from openai import OpenAI
-    client = OpenAI(api_key=os.getenv("HF_TOKEN", ""))
-    USE_LLM = bool(os.getenv("HF_TOKEN"))
-except ImportError:
-    client = None
-    USE_LLM = False
+    from groq_agent import GroqVPPAgent
+    groq_agent = GroqVPPAgent()
+    GROQ_AVAILABLE = groq_agent.enabled
+except Exception as e:
+    print(f"⚠️  Groq AI agent not loaded: {e}")
+    groq_agent = None
+    GROQ_AVAILABLE = False
 
 
 class SimulationState:
@@ -360,33 +368,44 @@ def _rule_agent(obs: Dict[str, Any], task_id: str) -> Dict[str, Any]:
     }
 
 
-def get_rl_action(obs: Dict[str, Any], task_id: str) -> Dict[str, Any]:
+def get_rl_action(obs: Dict[str, Any], task_id: str) -> tuple:
     """
-    Get action from RL model (or fall back to rule-based).
-    
-    Priority:
-    1. Try task-specific trained model
-    2. Fall back to rule-based agent
+    Get action with 3-tier fallback:
+      1. Task-specific trained RL model
+      2. Groq AI LLM agent (Llama 3.3 70B)
+      3. Simple rule-based agent
+
+    Returns:
+        (action_dict, ai_reasoning_text_or_None)
     """
     global _model_cache
+    ai_reasoning = None
     
-    if not RL_AGENT_AVAILABLE:
-        return _rule_agent(obs, task_id)
+    # ── Tier 1: Trained RL model ──────────────────────────────────────
+    if RL_AGENT_AVAILABLE:
+        try:
+            if task_id not in _model_cache:
+                _model_cache[task_id] = load_model_for_task(task_id)
+            agent = _model_cache[task_id]
+            if agent and agent.model is not None:
+                return (agent.get_action_dict(obs, task_id), "🧠 RL Model active")
+        except Exception as e:
+            print(f"⚠️  RL model error ({e}). Trying Groq AI…")
     
-    # Try RL model first
-    try:
-        if task_id not in _model_cache:
-            _model_cache[task_id] = load_model_for_task(task_id)
-        
-        agent = _model_cache[task_id]
-        
-        if agent and agent.model is not None:
-            return agent.get_action_dict(obs, task_id)
-    except Exception as e:
-        print(f"⚠️  RL model error ({e}). Falling back to rule agent.")
+    # ── Tier 2: Groq AI LLM agent ─────────────────────────────────────
+    if GROQ_AVAILABLE and groq_agent is not None:
+        try:
+            action, reasoning = groq_agent.get_action(obs, task_id)
+            if action is not None:
+                return (action, reasoning)
+            # action was None but we got a message (cached / error)
+            ai_reasoning = reasoning
+        except Exception as e:
+            print(f"⚠️  Groq agent error ({e}). Falling back to rules.")
+            ai_reasoning = f"⚠️ Groq error: {e}"
     
-    # Fall back to rule-based
-    return _rule_agent(obs, task_id)
+    # ── Tier 3: Rule-based fallback ────────────────────────────────────
+    return (_rule_agent(obs, task_id), ai_reasoning or "📏 Rule-based fallback")
 
 
 async def run_simulation_loop(task_id: str):
@@ -426,8 +445,8 @@ async def run_simulation_loop(task_id: str):
             # Run episode
             done = False
             while not done and simulation_state.running:
-                # Get action from RL agent (or rule-based fallback)
-                action_dict = get_rl_action(obs_dict, task_id)
+                # Get action from RL / Groq AI / rule-based fallback
+                action_dict, ai_reasoning = get_rl_action(obs_dict, task_id)
                 action = VppAction(**action_dict)
                 
                 # Step environment
@@ -439,13 +458,20 @@ async def run_simulation_loop(task_id: str):
                 # Update simulation state
                 simulation_state.update_from_observation(obs, action)
                 
+                # Build broadcast payload
+                state_payload = simulation_state.to_dict()
+                if ai_reasoning:
+                    state_payload["ai_reasoning"] = ai_reasoning
+                if GROQ_AVAILABLE and groq_agent:
+                    state_payload["ai_stats"] = groq_agent.stats
+                
                 # Broadcast updated state
                 await connection_manager.broadcast({
                     "type": "state_update",
-                    "data": simulation_state.to_dict()
+                    "data": state_payload
                 })
                 
-                # Wait 500ms for visual smoothness (adjust for real-time vs faster playback)
+                # Wait 500ms for visual smoothness
                 await asyncio.sleep(0.5)
             
             # Episode complete
@@ -512,6 +538,14 @@ async def list_models():
             "loaded": agent.model is not None,
         }
     return models_info
+
+
+@app.get("/ai-stats")
+async def ai_stats():
+    """Groq AI agent statistics."""
+    if groq_agent:
+        return groq_agent.stats
+    return {"enabled": False, "message": "Groq AI agent not loaded"}
 
 
 @app.websocket("/ws")
@@ -635,6 +669,7 @@ if __name__ == "__main__":
 ║  Agent Status:                                            ║
 ║  - RL Framework Available: {str(RL_AGENT_AVAILABLE).ljust(31)} ║
 ║  - VPP Available: {str(VPP_AVAILABLE).ljust(40)} ║
+║  - Groq AI Agent: {str(GROQ_AVAILABLE).ljust(40)} ║
 ║                                                           ║""")
     
     if model_status_lines:
